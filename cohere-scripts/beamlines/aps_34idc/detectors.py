@@ -123,6 +123,23 @@ class Detector(ABC):
         """
         pass
 
+    @abstractmethod
+    def correct_frame(self, raw_frame):
+        """
+        Apply correction appropriate for the specific detector to the
+        raw frame.
+
+        Parameters
+        ----------
+        raw_frame : raw frame ndarray
+
+        Returns
+        -------
+        ndarray
+            frame after instrument correction
+        """
+        pass
+
     def get_pixel(self):
         """
         Returns detector pixel size.  Concrete function in subclass returns value applicable to the detector.
@@ -157,6 +174,9 @@ class Detector_34idcTIM1(Detector):
         # this will capture things like data directory, darkfield_filename, etc.
         for key, val in kwargs.items():
             setattr(self, key, val)
+        self.load_darkfield()
+        if self.roi is None:
+            self.roi = (0, 512, 0, 512)
 
     def load_darkfield(self):
         """
@@ -203,6 +223,31 @@ class Detector_34idcTIM1(Detector):
 
         return frame
 
+    def correct_frame(self, raw_frame):
+        """
+        Apply correction appropriate for the TIM1 detector to the
+        raw frame.
+
+        Parameters
+        ----------
+        raw_frame : raw frame ndarray
+
+        Returns
+        -------
+        ndarray
+            frame after instrument correction
+        """
+        if self.darkfield is None:
+            return raw_frame
+
+        roislice1 = slice(self.roi[0], self.roi[0] + self.roi[1])
+        roislice2 = slice(self.roi[2], self.roi[2] + self.roi[3])
+
+        try:
+            frame = np.where(self.darkfield[roislice1, roislice2] > 1, 0.0, raw_frame)
+        except:
+            frame = raw_frame
+        return frame
 
 class Detector_34idcTIM2(Detector):
     """
@@ -227,6 +272,12 @@ class Detector_34idcTIM2(Detector):
         # this will capture things like data directory, whitefield_filename, etc.
         for key, val in kwargs.items():
             setattr(self, key, val)
+        self.load_darkfield()
+        self.load_whitefield()
+        if self.roi is None:
+            self.roi = (0, 512, 0, 512)
+        if self.Imult is None:
+            self.Imult = self.wfavg
 
     def load_whitefield(self):
         """
@@ -315,6 +366,37 @@ class Detector_34idcTIM2(Detector):
         # some of this should probably be in try blocks
         self.get_raw_frame(filename)
         normframe = self.raw_frame / self.whitefield[roislice1, roislice2] * self.Imult
+        normframe = np.where(self.darkfield[roislice1, roislice2] > 1, 0.0, normframe)
+        normframe = np.where(np.isfinite(normframe), normframe, 0)
+
+        frame, seam_added = self.insert_seam(normframe)
+        frame = np.where(np.isnan(frame), 0, frame)
+
+        if seam_added:
+            frame = self.clear_seam(frame)
+        return frame
+
+    def correct_frame(self, raw_frame):
+        """
+        Apply correction appropriate for TIM2 detector to the
+        raw frame.
+
+        Parameters
+        ----------
+        raw_frame : raw frame ndarray
+
+        Returns
+        -------
+        ndarray
+            frame after instrument correction
+        """
+        if self.darkfield is None or self.whitefield is None:
+            return raw_frame
+
+        roislice1 = slice(self.roi[0], self.roi[0] + self.roi[1])
+        roislice2 = slice(self.roi[2], self.roi[2] + self.roi[3])
+
+        normframe = raw_frame / self.whitefield[roislice1, roislice2] * self.Imult
         normframe = np.where(self.darkfield[roislice1, roislice2] > 1, 0.0, normframe)
         normframe = np.where(np.isfinite(normframe), normframe, 0)
 

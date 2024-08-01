@@ -108,6 +108,8 @@ class Instrument:
     def get_scan_array(self, scan_dir):
         return self.det_obj.get_scan_array(scan_dir)
 
+    def correct_frame(self, raw_frame):
+        return self.det_obj.correct_frame(raw_frame)
 
     def get_geometry(self, shape, scan, xtal=False, **kwargs):
         """
